@@ -16,6 +16,7 @@ const config = {
 // Global variables to store tokens
 let accessToken;
 let refreshToken;
+let instanceUrl;
 
 // Function to generate a random code verifier
 function generateCodeVerifier(length) {
@@ -56,12 +57,13 @@ app.get('/callback', async (req, res) => {
 
             accessToken = tokenResponse.data.access_token;
             refreshToken = tokenResponse.data.refresh_token;
+            instanceUrl = tokenResponse.data.instance_url;
 
             console.log('✅ Access Token:', accessToken);
             console.log('🔄 Refresh Token:', refreshToken);
-            console.log('🌍 Instance URL:', tokenResponse.data.instance_url);
+            console.log('🌍 Instance URL:', instanceUrl);
 
-            res.send('Successfully obtained access and refresh tokens! Check the console.');
+            res.send('Successfully obtained access and refresh tokens! Check the console.  You can now access /data');
         } catch (error) {
             console.error('❌ Error exchanging code for token:', error.response?.data || error.message);
             res.status(500).send('Failed to obtain access token.');
@@ -72,16 +74,50 @@ app.get('/callback', async (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`Server listening at http://localhost:${port}`);
-    console.log('Automatically initiating authorization flow...');
-    // Simulate a redirect to /auth when the server starts.  This will only work if a browser is open.
-    const authUrl = `http://localhost:${port}/auth`;
-    console.log(`Open this URL in your browser to authorize: ${authUrl}`);
+// Route to get data from Salesforce
+app.get('/data', async (req, res) => {
+    if (!accessToken) {
+        return res.status(401).send('Error: Access token not available. Please visit /auth to authorize.');
+    }
 
+    try {
+        const query = `
+            SELECT Id,
+                Name
+            FROM Account
+            LIMIT 10
+        `;  //  example query
+
+        const encodedQuery = encodeURIComponent(query);
+        const url = `${instanceUrl}/services/data/v59.0/query/?q=${encodedQuery}`; //  adjust the API version
+
+        const response = await axios.get(url, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+
+        if (response.data && response.data.records) {
+            console.log('✅ Successfully retrieved data from Salesforce:');
+            console.log(response.data.records);
+            res.json(response.data.records); // Send the data as JSON
+        } else {
+            console.log('⚠️ No records found.');
+            res.status(404).send('No records found.');
+        }
+    } catch (error) {
+        console.error('❌ Error querying Salesforce:', error.response?.data || error.message);
+        res.status(500).send('Failed to query Salesforce: ' + error.message);
+    }
 });
 
+
+
+app.listen(port, () => {
+    console.log(`Server listening at http://localhost:${port}`);
+    console.log('Open your browser to authorize: http://localhost:3000/auth');
+
+});
 // Simulate a redirect to /auth when the server starts.
-// This will only work if a browser is open.
-const { exec } = require('child_process');
-exec(`open http://localhost:${port}/auth`);
+// const { exec } = require('child_process');
+// exec(`open http://localhost:${port}/auth`); // Removed auto open.
